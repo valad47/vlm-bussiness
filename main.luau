@@ -2,11 +2,13 @@ local time = os.clock()
 
 local tgbot = require_shared("tgbot")
 local task = require_shared("task")
-local pprint = require("pprint")
+local pprint = require_shared("pprint")
 local io = require_shared("io")
-local cbor = require("cbor")
+local cbor = require_shared("cbor")
+local xor = require_shared("xor")
 
 local user_commands = require_shared("user_commands")
+local mute = require_shared("mute")
 
 local token = io.ReadFile(".token")
 
@@ -51,7 +53,7 @@ local function deleted_message(update)
       for i, v in update.message_ids do
           if chats[business_id] and chats[business_id][update.chat.id] and chats[business_id][update.chat.id][v] then
               local message = chats[business_id][update.chat.id][v]
-              tgbot.SendMessage(connections[update.business_connection_id], `New deleted message from <a href="tg://user?id={message.id}">{message.first_name}</a> (@{message.username}):\n\n{message.text}`, "HTML")
+              tgbot.SendMessage(connections[update.business_connection_id], `New deleted message from <a href="tg://user?id={message.id}">{message.first_name}</a> (@{message.username}):\n{message.text}`, "HTML")
               if message.audio then
                  tgbot.Method("sendAudio", {chat_id = connections[update.business_connection_id], audio = message.audio})
               end
@@ -79,12 +81,18 @@ end
 
 local function new_message(update)
       local business_id = connections[update.business_connection_id]
+      if not mute.new_message(update, business_id) then return end
       if business_id == update.from.id then
           if user_commands(update) then return end
       end
 
       if update.reply_to_message and update.reply_to_message.has_protected_content then
           new_message(update.reply_to_message)
+          deleted_message({
+              business_connection_id = update.business_connection_id,
+              message_ids = {update.reply_to_message.message_id},
+              chat = update.reply_to_message.chat
+          })
       end
 
       if not chats[business_id] then chats[business_id] = {} end
@@ -129,6 +137,7 @@ end
 
 local function message_edited(update)
       if update.location then return end
+      if update.message and (update.message.gift or update.message.unique_gift) then return end
       local business_id = connections[update.business_connection_id]
       if not settings[business_id] then settings[business_id] = {
           edited_message = true,
@@ -140,23 +149,25 @@ local function message_edited(update)
       new_message(update)
       
       if settings[business_id].edited_message then
-          tgbot.SendMessage(business_id, `Edited message from <a href="tg://user?id={update.id}">{update.from.first_name}</a> (@{update.from.username}):\nBefore:\n\n{message.text}\n\nAfter:\n\n{update.text}`, "HTML")
+          tgbot.SendMessage(business_id, `Edited message from <a href="tg://user?id={update.id}">{update.from.first_name}</a> (@{update.from.username}):\nBefore:\n{message.text}\n\nAfter:\n{update.text}`, "HTML")
       end
 end
-
-tgbot.AddCommand("save", function(update)
-     if update.message.from.id ~= 829586530 then return end
-     local time = os.clock()
-     io.WriteFile(".chat_save", cbor.encode(chats), token)
-     tgbot.SendMessage(update.message.chat.id, ("Saved chats in %.3f seconds"):format(os.clock() - time))
-end, "[Developer command, you don't have access]")
 
 tgbot.AddCommand("start", function(update)
     tgbot.SendMessage(update.message.chat.id, `Welcome to *Dmessages*\\.\n\n*Dmessages* is a powerful bot for saving deleted and edited telegram messages in private chats\\.\n\nTo connect bot, you *must* have telegram premium, in order to access telegram business features\\.\nNext, navigate to telegram's\n*\\[Setting\\] \\-\\> \\[Telegram Business\\] \\-\\> \\[Chatbots\\]*\nand paste link \`t.me/valad47_business_bot\` here\\.\n\nTo have access to user commands, enable *\\[Reply to Messages\\]* option\\.\n\nMore info about user commands: /help\n\n_Powered by [vlm](https://github.com/valad47/vlm)_`, "MarkdownV2")
 end, "Welcome message of the bot")
 
 tgbot.AddCommand("help", function(update)
-    tgbot.SendMessage(update.message.chat.id, `User commands list\nTo use commands, just type them in private chats\n\n**>\`.penis\` \\- PENIS ON THE BEAT\\!\\!\\!\n>\`.di\` \\- 1000\\-7 message sequence \\(May be slowed down by telegram restrictions\\)\n>\`.pp\` \\- preset message sequence||`, "MarkdownV2")
+    tgbot.SendMessage(update.message.chat.id, `User commands list\n`..
+    `To use commands, just type them in private chats`..
+    `\n`..
+    `\n`..
+    `**>\`.penis\` \\- PENIS ON THE BEAT\\!\\!\\!\n`..
+    `>\`.di\` \\- 1000\\-7 message sequence \\(May be slowed down by telegram restrictions\\)\n`..
+    `>\`.pp\` \\- preset message sequence\n`..
+    `>\`.spam \\[num\\] \\[msg\\]\` \\- send \\[msg\\] message \\[num\\] times\n`..
+    `>\`.app \\[msg\\]\` \\- send \\[msg\\] word by word with delay in 1 seconds||`
+    , "MarkdownV2")
 end, "User commands list")
 
 
@@ -207,32 +218,34 @@ local callbacks = {
       callback_query = callback_query
 }
 
-local handler = {}
-setmetatable(handler, {
-    __index = function(t, k)
-        if callbacks[k] == nil then return function() end end
-        return callbacks[k]
-    end
-})
-
 tgbot.SetTextHandler(function(update)
     for i, v in update do
-        handler[i](v)
+        (callbacks[i] or function() end)(v)
     end
 end)
 
 task.spawn(function()
     while task.wait(300) do
-          time = os.clock()
-          io.WriteFile(".chat_save", cbor.encode(chats), token)
-          print(("Saved chat in %.3f seconds"):format(os.clock() - time))
+        task.truethread(function()
+          mute.save()
+          io.WriteFile(".chat_save", xor(cbor.encode(chats), token))
+        end)
     end
 end)
 
+tgbot.AddCommand("save", function(update)
+     if update.message.from.id ~= 829586530 then return end
+     task.truethread(function()
+         local time = task.__time()
+         io.WriteFile(".chat_save", xor(cbor.encode(chats), token))
+         tgbot.SendMessage(update.message.chat.id, ("Saved chats in %.3f seconds"):format(task.__time() - time))
+     end)
+end, "[Developer command, you don't have access]")
 
 restore_connections()
-chats = cbor.decode(io.ReadFile(".chat_save"))
-settings = cbor.decode(io.ReadFile(".settings"))
+chats = cbor.decode(xor(io.ReadFile(".chat_save"), token))
+local ss = io.ReadFile(".settings")
+settings = if ss and ss ~= "" then cbor.decode(ss) else {}
 
 print(("Loaded bot in %.3f seconds"):format(os.clock() - time))
 tgbot.StartLoop()
