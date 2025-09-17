@@ -243,7 +243,8 @@ tgbot.AddCommand("save", function(update)
 end, "[Developer command, you don't have access]")
 
 restore_connections()
-chats = cbor.decode(xor(io.ReadFile(".chat_save"), token))
+chats = io.ReadFile(".chat_save")
+chats = if chats then cbor.decode(xor(chats, token)) else {}
 local ss = io.ReadFile(".settings")
 settings = if ss and ss ~= "" then cbor.decode(ss) else {}
 
