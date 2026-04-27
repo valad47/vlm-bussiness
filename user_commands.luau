@@ -1,5 +1,8 @@
 local tgbot = require_shared("tgbot")
 local task = require_shared("task")
+local pprint = require_shared("pprint")
+
+local userdb = require_shared("userdb")
 
 local function artem(update)
       local body = {
@@ -197,6 +200,31 @@ local function app(update)
       end
 end
 
+local function del(update)
+    local args = string.split(update.text, " ")
+    local num = if #args == 2 then (tonumber(args[2]) or 0) + 1 else 1
+    local business_id = userdb.connections[update.business_connection_id]
+
+    local delete_ids = {{update.message_id}}
+    local epoch = update.message_id
+    for i = 2, num do
+        delete_ids[(i%100) + 1] = delete_ids[(i%100) + 1] or {}
+        local message = nil
+        while epoch > 1 and (not message or message.deleted) do
+            epoch -= 1
+            message = userdb.chats[business_id][update.chat.id][epoch]
+        end
+        message.deleted = true
+        table.insert(delete_ids[(i%100) + 1], epoch)
+    end
+    for i,v in delete_ids do
+        tgbot.Method("deleteBusinessMessages", {
+             business_connection_id = update.business_connection_id,
+             message_ids = v
+        })
+    end
+end
+
 local mute = require_shared("mute")
 
 local commands = {
@@ -210,7 +238,9 @@ local commands = {
       [".спам"] = spam,
       [".app"] = app,
       [".mute"] = mute.mute,
-      [".unmute"] = mute.unmute
+      [".unmute"] = mute.unmute,
+      [".del"] = del,
+      [".trans"] = require_shared("translate")
 }
 
 local function do_command(update)

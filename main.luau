@@ -3,39 +3,22 @@ local time = os.clock()
 local tgbot = require_shared("tgbot")
 local task = require_shared("task")
 local pprint = require_shared("pprint")
-local io = require_shared("io")
-local cbor = require_shared("cbor")
-local xor = require_shared("xor")
 
 local user_commands = require_shared("user_commands")
 local mute = require_shared("mute")
 
-local token = io.ReadFile(".token")
+local userdb = require_shared("userdb")
 
-tgbot.SetToken(token)
+local chats = userdb.chats
+local connections = userdb.connections
+local settings = userdb.settings
+
 tgbot._AsyncNoRet()
 
 local owner_chat = 829586530
 
-local chats = {}
-local connections = {}
-local settings = {}
-
-local function save_connections()
-      io.WriteFile(".connections", cbor.encode(connections))
-end
-
-local function restore_connections()
-      connections = cbor.decode(io.ReadFile(".connections"))
-end
-
-local function save_settings()
-      io.WriteFile(".settings", cbor.encode(settings))
-end
-
 local function business_connection(update)
       connections[update.id] = if update.is_enabled then update.user_chat_id else nil
-      save_connections()
       tgbot.SendMessage(owner_chat, `User [{update.user.first_name}](tg://user?id={update.user.id}) {if update.is_enabled then "" else "dis"}connected bot\\!`, "MarkdownV2")
 end
 
@@ -46,34 +29,33 @@ local function deleted_message(update)
           edited_message = true,
           deleted_message = true
       } end
-      save_settings()
 
       if not settings[business_id].deleted_message then return end
 
       for i, v in update.message_ids do
-          if chats[business_id] and chats[business_id][update.chat.id] and chats[business_id][update.chat.id][v] then
-              local message = chats[business_id][update.chat.id][v]
-              tgbot.SendMessage(connections[update.business_connection_id], `New deleted message from <a href="tg://user?id={message.id}">{message.first_name}</a> (@{message.username}):\n{message.text}`, "HTML")
-              if message.audio then
-                 tgbot.Method("sendAudio", {chat_id = connections[update.business_connection_id], audio = message.audio})
-              end
-              if message.photo then
-                 tgbot.Method("sendPhoto", {chat_id = connections[update.business_connection_id], photo = message.photo})
-              end
-              if message.document then
-                 tgbot.Method("sendDocument", {chat_id = connections[update.business_connection_id], document = message.document})
-              end
-              if message.voice then
-                 tgbot.Method("sendVoice", {chat_id = connections[update.business_connection_id], voice = message.voice})
-              end
-              if message.video then
-                 tgbot.Method("sendVideo", {chat_id = connections[update.business_connection_id], video = message.video})
-              end
-              if message.sticker then
-                 tgbot.Method("sendSticker", {chat_id = connections[update.business_connection_id], sticker = message.sticker})
-              end
-              if message.video_note then
-                 tgbot.Method("sendVideoNote", {chat_id = connections[update.business_connection_id], video_note = message.video_note})
+          local message = chats[business_id][update.chat.id][v]
+          if message then
+              message.deleted = true
+              tgbot.SendMessage(connections[update.business_connection_id], `New deleted message from <a href="tg://user?id={message.from_id}">{message.first_name}</a> (@{message.username}):\n{message.text}`, "HTML")
+
+              local methods = {
+                  ["audio"] = "sendAudio",
+                  ["photo"] = "sendPhoto",
+                  ["document"] = "sendDocument",
+                  ["voice"] = "sendVoice",
+                  ["video"] = "sendVideo",
+                  ["sticker"] = "sendSticker",
+                  ["video_note"] = "sendVideoNote"
+              }
+
+              local media_type = message.media_type or ""
+              local method = methods[media_type]
+              if method then
+                  local data = {
+                     chat_id = connections[update.business_connection_id]
+                  }
+                  data[media_type] = message.media_key
+                  tgbot.Method(method, data)
               end
           end
       end
@@ -95,44 +77,36 @@ local function new_message(update)
           })
       end
 
-      if not chats[business_id] then chats[business_id] = {} end
-      if not chats[business_id][update.chat.id] then chats[business_id][update.chat.id] = {} end
-      chats[business_id][update.chat.id][update.message_id] = {
-                                                                                    text = update.text,
-                                                                                    username = update.from.username,
-                                                                                    first_name = update.from.username,
-                                                                                    id = update.from.id
-                                                                                }
+      local new_message = {
+                              text = update.text,
+                              username = update.from.username,
+                              first_name = update.from.username,
+                              from_id = update.from.id,
+                              date = update.date
+      }
 
-      if update.photo then
-          for i,v in update.photo do
-              chats[business_id][update.chat.id][update.message_id].photo = v.file_id
+      local media = {
+          "photo",
+          "audio",
+          "document",
+          "voice",
+          "video",
+          "sticker",
+          "video_note"
+      }
+
+      for i,v in media do
+          if update[v] then
+              new_message.media_type = v
+              if v == "photo" then
+                  new_message.media_key = update.photo[1].file_id
+              else
+                  new_message.media_key = update[v].file_id
+              end
           end
       end
-      if update.audio then
-          local v = update.audio
-              chats[business_id][update.chat.id][update.message_id].audio = v.file_id
-      end
-      if update.document then
-          local v = update.document
-              chats[business_id][update.chat.id][update.message_id].document = v.file_id
-      end
-      if update.voice then
-          local v = update.voice
-              chats[business_id][update.chat.id][update.message_id].voice = v.file_id
-      end
-      if update.video then
-          local v = update.video
-              chats[business_id][update.chat.id][update.message_id].video = v.file_id
-      end
-      if update.sticker then
-          local v = update.sticker
-              chats[business_id][update.chat.id][update.message_id].sticker = v.file_id
-      end
-      if update.video_note then
-          local v = update.video_note
-              chats[business_id][update.chat.id][update.message_id].video_note = v.file_id
-      end
+
+      chats[business_id][update.chat.id][update.message_id] = new_message
 end
 
 local function message_edited(update)
@@ -143,14 +117,15 @@ local function message_edited(update)
           edited_message = true,
           deleted_message = true
       } end
-      save_settings()
 
-      local message = if chats[business_id] then if chats[business_id][update.chat.id] then chats[business_id][update.chat.id][update.message_id] or {} else {} else {}
-      new_message(update)
-      
+      local message = chats[business_id][update.chat.id][update.message_id]
+
+      if not message then return end
+
       if settings[business_id].edited_message then
           tgbot.SendMessage(business_id, `Edited message from <a href="tg://user?id={update.id}">{update.from.first_name}</a> (@{update.from.username}):\nBefore:\n{message.text}\n\nAfter:\n{update.text}`, "HTML")
       end
+      new_message(update)
 end
 
 tgbot.AddCommand("start", function(update)
@@ -162,10 +137,11 @@ tgbot.AddCommand("help", function(update)
     `To use commands, just type them in private chats`..
     `\n`..
     `\n`..
-    `**>\`.penis\` \\- PENIS ON THE BEAT\\!\\!\\!\n`..
-    `>\`.di\` \\- 1000\\-7 message sequence \\(May be slowed down by telegram restrictions\\)\n`..
+    `**>\`.di\` \\- 1000\\-7 message sequence \\(May be slowed down by telegram restrictions\\)\n`..
     `>\`.pp\` \\- preset message sequence\n`..
     `>\`.spam \\[num\\] \\[msg\\]\` \\- send \\[msg\\] message \\[num\\] times\n`..
+    `>\`.mute\` \\- delete all incoming messages from user\n`..
+    `>\`.unmute\` \\- stop \`.mute\`\n`..
     `>\`.app \\[msg\\]\` \\- send \\[msg\\] word by word with delay in 1 seconds||`
     , "MarkdownV2")
 end, "User commands list")
@@ -176,7 +152,6 @@ local function make_keyboard(user_id)
           edited_message = true,
           deleted_message = true
       } end
-      save_settings()
       
       return {inline_keyboard = {
             {
@@ -223,30 +198,6 @@ tgbot.SetTextHandler(function(update)
         (callbacks[i] or function() end)(v)
     end
 end)
-
-task.spawn(function()
-    while task.wait(300) do
-        task.truethread(function()
-          mute.save()
-          io.WriteFile(".chat_save", xor(cbor.encode(chats), token))
-        end)
-    end
-end)
-
-tgbot.AddCommand("save", function(update)
-     if update.message.from.id ~= 829586530 then return end
-     task.truethread(function()
-         local time = task.__time()
-         io.WriteFile(".chat_save", xor(cbor.encode(chats), token))
-         tgbot.SendMessage(update.message.chat.id, ("Saved chats in %.3f seconds"):format(task.__time() - time))
-     end)
-end, "[Developer command, you don't have access]")
-
-restore_connections()
-chats = io.ReadFile(".chat_save")
-chats = if chats then cbor.decode(xor(chats, token)) else {}
-local ss = io.ReadFile(".settings")
-settings = if ss and ss ~= "" then cbor.decode(ss) else {}
 
 print(("Loaded bot in %.3f seconds"):format(os.clock() - time))
 tgbot.StartLoop()
