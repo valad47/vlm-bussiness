@@ -1,29 +1,9 @@
 local tgbot = require_shared("tgbot")
 local task = require_shared("task")
 local pprint = require_shared("pprint")
+local io = require_shared("io")
 
 local userdb = require_shared("userdb")
-
-local function artem(update)
-      local body = {
-           chat_id = update.chat.id,
-           business_connection_id = update.business_connection_id,
-           message_id = update.message_id
-      }
-      local now = 99
-      body.text = "КАСТРАЦІЯ АРТЕМА ЧЕРЕЗ 100 СЕКУНД"
-      tgbot.Method("editMessageText", body)
-      body.message_id = nil
-      task.__sleep(1)
-      while now >= 0 do
-           body.text = `КАСТРАЦІЯ АРТЕМА ЧЕРЕЗ {now} СЕКУНД`
-           now -= 1
-           tgbot.Method("sendMessage", body)
-           task.__sleep(.5)
-      end
-      body.text = "КАСТРАЦІЯЯЯЯЯЯЯ"
-      tgbot.Method("sendMessage", body)
-end
 
 local function deadinside(update)
       local body = {
@@ -83,52 +63,6 @@ local function penis(update)
       task.__sleep(.1)
       body.text = "PENIS ON THE BEAT!!!"
       tgbot.Method("editMessageText", body)
-end
-
-local function pp(update)
-      texts(update, {
-                      "Як справи?",
-                      "Що робиш?",
-                      "Як настрій?",
-                      "Не голодна?",
-                      "Нічого не болить?",
-                      "Як здоров'я?",
-                      "Які плани на день?"
-      })
-end
-
-local function ps(update)
-      local text = string.split(update.text, "\n")
-      text[#text] = `\n<a href="https://t.me/valad47_business_bot">PENIS ON THE BEAT!!!</a> | <a href="https://t.me/valad47/341">Как правильно сосать член?</a>`
-      tgbot.Method("editMessageText", {
-           chat_id = update.chat.id,
-           business_connection_id = update.business_connection_id,
-           text = table.concat(text, "\n"),
-           parse_mode = "HTML",
-           link_preview_options = {is_disabled = true},
-           message_id = update.message_id
-      })
-end
-
-local function yaica(update)
-      local args = string.split(update.text, " ")
-      if #args < 2 then return end
-      local times = tonumber(args[2])
-      tgbot.Method("editMessagetext", {
-          chat_id = update.chat.id,
-          business_connection_id = update.business_connection_id,
-          text = "Человек-яйца",
-          message_id = update.message_id
-      })
-      task.__sleep(.5)
-      for i=1, times, 1 do
-          tgbot.Method("sendMessage", {
-              chat_id = update.chat.id,
-              business_connection_id = update.business_connection_id,
-              text = "Человек-яйца"
-          })
-          task.__sleep(.5)
-      end
 end
 
 local function switch(update)
@@ -225,14 +159,61 @@ local function del(update)
     end
 end
 
+local function download(update)
+    local args = string.split(update.text, " ")
+    local url = if #args == 2 and string.find(args[2], "https://") then
+                    args[2]
+                elseif update.reply_to_message
+                   and string.find(update.reply_to_message.text, "https://") then
+                    update.reply_to_message.text
+                else nil
+
+     if not url then
+         tgbot.Method("editMessagetext", {
+              chat_id = update.chat.id,
+              business_connection_id = update.business_connection_id,
+              text = `Usage: {args[1]} [url]\nOr reply .dl to message with video url`,
+              message_id = update.message_id
+          })
+          return
+     end
+
+     local uuid = `{update.chat.id}-{update.message_id}-{update.from.id}`
+
+     tgbot.Method("editMessagetext", {
+              chat_id = update.chat.id,
+              business_connection_id = update.business_connection_id,
+              text = `Downloading video...`,
+              message_id = update.message_id
+          })
+
+     local ret = io.shcall(`yt-dlp --max-filesize 50.0M --no-warnings -t mp4 --add-metadata --no-playlist -o {uuid}.mp4 {url}`)
+     local message = tgbot.MethodFile("sendVideo", {
+         chat_id = update.chat.id,
+         business_connection_id = update.business_connection_id
+         }, {video = `{uuid}.mp4`})
+     if not message then
+         tgbot.Method("editMessageText", {
+             business_connection_id = update.business_connection_id,
+             chat_id = update.chat.id,
+             message_id = update.message_id,
+             text = "Failed to download video, it may be above 50M, or try again later"
+         })
+     else
+         tgbot.Method("DeleteBusinessMessages", {
+             business_connection_id = update.business_connection_id,
+             message_ids = { update.message_id }
+         })
+     end
+     
+     io.DeleteFile(`{uuid}.mp4`)
+end
+
 local mute = require_shared("mute")
 
 local commands = {
       [".penis"] = penis,
       [".di"] = deadinside,
-      [".artem"] = artem,
-      [".pp"] = pp,
-      [".yaica"] = yaica,
       [".switch"] = switch,
       [".spam"] = spam,
       [".спам"] = spam,
@@ -240,6 +221,7 @@ local commands = {
       [".mute"] = mute.mute,
       [".unmute"] = mute.unmute,
       [".del"] = del,
+      [".dl"] = download,
       [".trans"] = require_shared("translate")
 }
 

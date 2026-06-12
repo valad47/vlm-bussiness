@@ -3,6 +3,9 @@ local time = os.clock()
 local tgbot = require_shared("tgbot")
 local task = require_shared("task")
 local pprint = require_shared("pprint")
+local io = require_shared("io")
+
+tgbot.SetToken(io.ReadFile(".token"))
 
 local user_commands = require_shared("user_commands")
 local mute = require_shared("mute")
@@ -70,17 +73,12 @@ local function new_message(update)
 
       if update.reply_to_message and update.reply_to_message.has_protected_content then
           new_message(update.reply_to_message)
-          deleted_message({
-              business_connection_id = update.business_connection_id,
-              message_ids = {update.reply_to_message.message_id},
-              chat = update.reply_to_message.chat
-          })
       end
 
       local new_message = {
                               text = update.text,
                               username = update.from.username,
-                              first_name = update.from.username,
+                              first_name = update.from.first_name,
                               from_id = update.from.id,
                               date = update.date
       }
@@ -129,7 +127,7 @@ local function message_edited(update)
 end
 
 tgbot.AddCommand("start", function(update)
-    tgbot.SendMessage(update.message.chat.id, `Welcome to *Dmessages*\\.\n\n*Dmessages* is a powerful bot for saving deleted and edited telegram messages in private chats\\.\n\nTo connect bot, you *must* have telegram premium, in order to access telegram business features\\.\nNext, navigate to telegram's\n*\\[Setting\\] \\-\\> \\[Telegram Business\\] \\-\\> \\[Chatbots\\]*\nand paste link \`t.me/valad47_business_bot\` here\\.\n\nTo have access to user commands, enable *\\[Reply to Messages\\]* option\\.\n\nMore info about user commands: /help\n\n_Powered by [vlm](https://github.com/valad47/vlm)_`, "MarkdownV2")
+    tgbot.SendMessage(update.message.chat.id, `Welcome to *Dmessages*\\.\n\n*Dmessages* is a powerful bot for saving deleted and edited telegram messages in private chats\\.\n\nTo connect bot,  navigate to telegram's\n*\\[Profile\\] \\-\\> \\[Edit Profile\\] \\-\\> \\[Chat Automation\\]*\nand paste link \`t.me/valad47_business_bot\` here\\.\n\nTo have access to user commands, enable *\\[Reply to Messages\\]* option\\.\n\nMore info about user commands: /help\n\n_Powered by [vlm](https://github.com/valad47/vlm)_`, "MarkdownV2")
 end, "Welcome message of the bot")
 
 tgbot.AddCommand("help", function(update)
@@ -138,7 +136,6 @@ tgbot.AddCommand("help", function(update)
     `\n`..
     `\n`..
     `**>\`.di\` \\- 1000\\-7 message sequence \\(May be slowed down by telegram restrictions\\)\n`..
-    `>\`.pp\` \\- preset message sequence\n`..
     `>\`.spam \\[num\\] \\[msg\\]\` \\- send \\[msg\\] message \\[num\\] times\n`..
     `>\`.mute\` \\- delete all incoming messages from user\n`..
     `>\`.unmute\` \\- stop \`.mute\`\n`..
